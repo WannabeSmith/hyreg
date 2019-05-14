@@ -1,0 +1,13 @@
+Package: hyreg
+Type: Package
+Title: Perform Hybrid Tobit-Logit Regression 
+Version: 0.1.0
+Authors@R: c(person("Ian", "Waudby-Smith", email = "ianws@cmu.edu", role = c("aut", "cre")), person("Eleanor", "Pullenayegum", email = "eleanor.pullenayegum@sickkids.ca", role = "aut"))
+Maintainer: Ian Waudby-Smith <ianws@cmu.edu>
+Description: This function gets estimates of beta, sigma, and theta in the hybrid tobit-logit model. That is, when the logit betas are a scalar multiple of the tobit betas.
+Imports:
+    survival
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+RoxygenNote: 6.1.1
