@@ -73,7 +73,7 @@ hyreg <- function(formula.tobit, formula.discrete, data.tobit, data.discrete, st
   # Create starting values if not provided
   if(is.null(start))
   {
-    model.start <- survreg(Surv(response, response > left, type = "left") ~
+    model.start <- survreg(Surv(y.tobit, y.tobit > left, type = "left") ~
                              X.tobit[, -1], dist = "gaussian")
     start <- c(model.start$coefficients, model.start$scale, 1)
   }
