@@ -112,3 +112,37 @@ hyreg <- function(formula.tobit, formula.discrete, data.tobit, data.discrete, st
               "theta" = theta.est))
 }
 
+hyreg.mm <- function(formula.tobit, formula.discrete, data.tobit, data.discrete, M, start = NULL, left = -1, id)
+{
+  u.subj.ids <- unique(data.tobit$SubjectID)
+  n.subj <- length(u.subj.ids)
+  contrib.tobit <- matrix(rbinom(M*n.subj, size = 1, prob = 1/2), ncol = n.subj)
+  contrib.tobit.list <- split(contrib.tobit, 1:M) # Put into list of rows
+  rm(contrib.tobit)
+
+  sub.data.sets <- lapply(contrib.tobit.list, function(row){
+    contribDF <- data.frame("id" = u.subj.ids, "contribTobit" = row)
+    colnames(contribDF)[1] <- id
+
+    sub.data.tobit <- merge(data.tobit, contribDF, by = id)
+    sub.data.tobit.contrib <- sub.data.tobit[sub.data.tobit$contribTobit == 1,]
+
+    sub.data.discrete <- merge(data.discrete, contribDF, by = id)
+    sub.data.discrete.contrib <- sub.data.discrete[sub.data.discrete$contribTobit == 0,]
+
+    rm(contribDF)
+
+    mm.logit <- glmmTMB(formula = formula.discrete,
+                        data = sub.data.discrete, family = binomial(link = "logit"),
+                        verbose = TRUE, se = FALSE,
+                        control = glmmTMBControl(optCtrl = list("iter.max" = 1e4,
+                                                                "eval.max" = 1e4)))
+    beta.logit <- mm.logit$fit$par
+
+    beta.tobit <- mixedtobit(formula = formula.tobit, data = sub.data.tobit, M = M, left = left, id = id)
+
+
+  })
+
+
+}
