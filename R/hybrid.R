@@ -112,15 +112,21 @@ hyreg <- function(formula.tobit, formula.discrete, data.tobit, data.discrete, st
               "theta" = theta.est))
 }
 
-hyreg.mm <- function(formula.tobit, formula.discrete, data.tobit, data.discrete, M, start = NULL, left = -1, id)
+beta.logLikelihood <- function(beta.tobit, theta, beta.hat.tobit, beta.hat.discrete, Sigma.hat.tobit.inv, Sigma.hat.discrete.inv)
 {
-  u.subj.ids <- unique(data.tobit$SubjectID)
+  return(-t(beta.hat.tobit - beta.tobit) %*% Sigma.hat.tobit.inv %*% (beta.hat.tobit - beta.tobit) -
+           t(beta.hat.discrete - theta * beta.tobit) %*% Sigma.hat.discrete.inv %*% (beta.hat.discrete - theta * beta.tobit))
+}
+
+hyreg.mm <- function(formula.tobit, formula.discrete, data.tobit, data.discrete, M, M.tobit, start = NULL, left = -1, id, same.variance = TRUE)
+{
+  u.subj.ids <- unique(data.tobit[, id])
   n.subj <- length(u.subj.ids)
   contrib.tobit <- matrix(rbinom(M*n.subj, size = 1, prob = 1/2), ncol = n.subj)
   contrib.tobit.list <- split(contrib.tobit, 1:M) # Put into list of rows
   rm(contrib.tobit)
 
-  sub.data.sets <- lapply(contrib.tobit.list, function(row){
+  estimates.list <- lapply(contrib.tobit.list, function(row){
     contribDF <- data.frame("id" = u.subj.ids, "contribTobit" = row)
     colnames(contribDF)[1] <- id
 
@@ -130,19 +136,52 @@ hyreg.mm <- function(formula.tobit, formula.discrete, data.tobit, data.discrete,
     sub.data.discrete <- merge(data.discrete, contribDF, by = id)
     sub.data.discrete.contrib <- sub.data.discrete[sub.data.discrete$contribTobit == 0,]
 
+    rm(sub.data.tobit)
+    rm(sub.data.discrete)
     rm(contribDF)
 
-    mm.logit <- glmmTMB(formula = formula.discrete,
-                        data = sub.data.discrete, family = binomial(link = "logit"),
-                        verbose = TRUE, se = FALSE,
+    var.names <- all.vars(formula.discrete)
+    predictor.names <- var.names[-1]
+    y.name <- var.names[1]
+    formula.glmmTMB.str <- paste(y.name, " ~ ", paste(predictor.names, collapse = " + "),
+                                 " + (", paste(predictor.names, collapse = " + "), " || ", id, ")", sep = "")
+    formula.glmmTMB <- formula(formula.glmmTMB.str)
+
+    mm.logit <- glmmTMB(formula = formula.glmmTMB,
+                        data = sub.data.discrete.contrib, family = binomial(link = "logit"),
+                        verbose = TRUE, se = TRUE,
                         control = glmmTMBControl(optCtrl = list("iter.max" = 1e4,
                                                                 "eval.max" = 1e4)))
-    beta.logit <- mm.logit$fit$par
+    num.predictors <- length(mm.logit$fit$par)/2
+    beta.hat.discrete <- mm.logit$fit$par[1:num.predictors]
+    Sigma.hat.discrete <- vcov(mm.logit)[[1]]
+    Sigma.hat.discrete.inv <- solve(Sigma.hat.discrete)
 
-    beta.tobit <- mixedtobit(formula = formula.tobit, data = sub.data.tobit, M = M, left = left, id = id)
+    mm.tobit <- mixedtobit(formula = formula.tobit, data = sub.data.tobit.contrib,
+                           M = M.tobit, left = left, id = id, same.variance = same.variance)
+    beta.hat.tobit <- mm.tobit$beta
+    Sigma.hat.tobit <- mm.tobit$Sigma
+    Sigma.hat.tobit.inv <- solve(Sigma.hat.tobit)
 
+    Q <- function(params)
+    {
+      -beta.logLikelihood(beta.tobit = params[-length(params)], theta = params[length(params)],
+                      beta.hat.tobit = beta.hat.tobit, beta.hat.discrete = beta.hat.discrete,
+                      Sigma.hat.tobit.inv = Sigma.hat.tobit.inv, Sigma.hat.discrete.inv = Sigma.hat.discrete.inv)
+    }
+    init <- c(rep(0, length(beta.hat.tobit)), 1)
+    optimum <- optim(par = init, fn = Q, method = "L")
 
+    beta.hat.overall <- optimum$par[1:(length(init) - 1)]
+    theta.hat.overall <- optimum$par[length(init)]
+
+    names(beta.hat.overall) <- names(beta.hat.tobit)
+    names(theta.hat.overall) <- "theta"
+
+    return(c(beta.hat.overall, theta.hat.overall))
   })
 
+  estimates <- colMeans(do.call(rbind, estimates.list))
 
+  return(estimates)
 }
