@@ -118,7 +118,8 @@ beta.logLikelihood <- function(beta.tobit, theta, beta.hat.tobit, beta.hat.discr
            t(beta.hat.discrete - theta * beta.tobit) %*% Sigma.hat.discrete.inv %*% (beta.hat.discrete - theta * beta.tobit))
 }
 
-hyreg.mm <- function(formula.tobit, formula.discrete, data.tobit, data.discrete, M, M.tobit, start = NULL, left = -1, id, ch.terms = NULL)
+hyreg.mm <- function(formula.tobit, formula.discrete, data.tobit,
+                     data.discrete, M, M.tobit, start = NULL, left = -1, id, ch.terms = NULL)
 {
   u.subj.ids <- unique(data.tobit[, id])
   n.subj <- length(u.subj.ids)
@@ -160,7 +161,7 @@ hyreg.mm <- function(formula.tobit, formula.discrete, data.tobit, data.discrete,
     mm.tobit <- mixedtobit(formula = formula.tobit, data = sub.data.tobit.contrib,
                            M = M.tobit, left = left, id = id, ch.terms = ch.terms)
     beta.hat.tobit <- mm.tobit$beta
-    Sigma.hat.tobit <- mm.tobit$Sigma
+    Sigma.hat.tobit <- mm.tobit$mean.Sigmas
     Sigma.hat.tobit.inv <- solve(Sigma.hat.tobit)
 
     Q <- function(params)
@@ -186,10 +187,10 @@ hyreg.mm <- function(formula.tobit, formula.discrete, data.tobit, data.discrete,
   return(estimates)
 }
 
-# data.tobit$level2 <- rowMeans(X.tto[, endsWith(colnames(X.tto), "2")])
-# data.tobit$level3 <- rowMeans(X.tto[, endsWith(colnames(X.tto), "3")])
-# data.tobit$level4 <- rowMeans(X.tto[, endsWith(colnames(X.tto), "4")])
-# data.tobit$level5 <- rowMeans(X.tto[, endsWith(colnames(X.tto), "5")])
+# data.tobit$level2 <- rowSums(X.tto[, endsWith(colnames(X.tto), "2")])
+# data.tobit$level3 <- rowSums(X.tto[, endsWith(colnames(X.tto), "3")])
+# data.tobit$level4 <- rowSums(X.tto[, endsWith(colnames(X.tto), "4")])
+# data.tobit$level5 <- rowSums(X.tto[, endsWith(colnames(X.tto), "5")])
 #
 # ch.terms <- c("level2", "level3", "level4", "level5")
 #
