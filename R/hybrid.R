@@ -39,6 +39,7 @@ llHybrid <- function(y.tobit, y.discrete, sigma, xTbeta.tobit, xTbeta.discrete)
 #'
 #' @importFrom stats model.matrix dnorm pnorm optim
 #' @importFrom survival survreg
+#' @importFrom survival Surv
 #' @param formula.tobit a regression formula describing the relationship between the tobit response and the covariates
 #' @param formula.discrete a regression formula describing the relationship between the bernoulli response and the covariates
 #' @param data.tobit the data.frame containing the tobit responses and covariates
