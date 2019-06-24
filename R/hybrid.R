@@ -26,9 +26,9 @@ llLogisticReg <- function(y, xTbeta)
 }
 
 # log-likelihood of the hybrid tobit-logit regression model
-llHybrid <- function(y.tobit, y.discrete, sigma, xTbeta.tobit, xTbeta.discrete)
+llHybrid <- function(y.tobit, y.discrete, sigma, xTbeta.tobit, xTbeta.discrete, left)
 {
-  llTobit(y = y.tobit, xTbeta = xTbeta.tobit, sigma = sigma, left = -1) +
+  llTobit(y = y.tobit, xTbeta = xTbeta.tobit, sigma = sigma, left = left) +
     llLogisticReg(y = y.discrete, xTbeta = xTbeta.discrete)
 }
 
@@ -40,18 +40,22 @@ llHybrid <- function(y.tobit, y.discrete, sigma, xTbeta.tobit, xTbeta.discrete)
 #' @importFrom stats model.matrix dnorm pnorm optim
 #' @importFrom survival survreg
 #' @importFrom survival Surv
+#' @importFrom compiler cmpfun
 #' @param formula.tobit a regression formula describing the relationship between the tobit response and the covariates
 #' @param formula.discrete a regression formula describing the relationship between the bernoulli response and the covariates
 #' @param data.tobit the data.frame containing the tobit responses and covariates
 #' @param data.discrete the data.frame containing the bernoulli responses and covariates
-#' @param start a vector of starting values for optimization. If not specified, starting values are taken from a non-hybrid tobit model, and theta is set to 1.
+#' @param start.beta a numeric vector of starting values for beta. If not specified, start.beta is taken from a non-hybrid tobit model
+#' @param start.sigma a numeric starting value for sigma. If not specified, start.sigma is also taken from a non-hybrid tobit model
+#' @param start.theta starting value for theta.
 #' @param left a number specifying where left-censoring occurred
 #' @return a list containing the following parameter estimates (from maximum likelihood):\cr
 #' \item{beta}{the regression coefficients}
 #' \item{sigma}{the standard deviation of the censored normal distribution}
 #' \item{theta}{the multiplicative factor relating the two sets of regression coefficients}
 #' @export
-hyreg <- function(formula.tobit, formula.discrete, data.tobit, data.discrete, start = NULL, left = -1)
+hyreg <- function(formula.tobit, formula.discrete, data.tobit, data.discrete,
+                  start.beta = NULL, start.sigma = NULL, start.theta = 1, left = -1)
 {
   response.varname.tobit <- all.vars(formula.tobit)[1]
   y.tobit <- as.vector(data.tobit[, response.varname.tobit])
@@ -72,19 +76,30 @@ hyreg <- function(formula.tobit, formula.discrete, data.tobit, data.discrete, st
   num.params <- num.betas + 2
 
   # Create starting values if not provided
-  if(is.null(start))
+  if(is.null(start.beta) || is.null(start.sigma))
   {
     model.start <- survreg(Surv(y.tobit, y.tobit > left, type = "left") ~
-                             X.tobit[, -1], dist = "gaussian")
-    start <- c(model.start$coefficients, model.start$scale, 1)
+                             0 + X.tobit, dist = "gaussian")
   }
+
+  if(is.null(start.beta))
+  {
+    start.beta <- model.start$coefficients
+  }
+
+  if(is.null(start.sigma))
+  {
+    start.sigma <- model.start$scale
+  }
+
+  start <- c(start.beta, start.sigma, start.theta)
 
   names(start) <- c(colnames(X.tobit), "sigma", "theta")
 
   # Specify lower bounds for L-BFGS-B
   # all betas can take on values from -Inf to Inf, but sigma and theta can only take on values > 0.
   #   However, setting the lower bound exactly to 0 causes numerical issues in the optimization procedure.
-  lower = c(rep(-Inf, num.betas), 10e-16, 10e-16)
+  lower = c(rep(-Inf, num.betas), 10e-16, -Inf)
 
   # Create the objective function (this is created here so that num.betas,
   #   X.tobit, etc. are all in scope)
@@ -98,8 +113,10 @@ hyreg <- function(formula.tobit, formula.discrete, data.tobit, data.discrete, st
     xTbeta.discrete <- theta * X.discrete %*% beta.tobit
 
     return(-llHybrid(y.tobit = y.tobit, y.discrete = y.discrete, xTbeta.tobit = xTbeta.tobit,
-                     xTbeta.discrete = xTbeta.discrete, sigma = sigma))
+                     xTbeta.discrete = xTbeta.discrete, sigma = sigma, left = left))
   }
+
+  objective <- cmpfun(objective)
 
   optimum <- optim(par = start, fn = objective,
                    lower = lower, method = "L-BFGS-B")

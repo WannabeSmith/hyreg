@@ -5,7 +5,8 @@
 \title{Perform hybrid tobit-logit regression}
 \usage{
 hyreg(formula.tobit, formula.discrete, data.tobit, data.discrete,
-  start = NULL, left = -1)
+  start.beta = NULL, start.sigma = NULL, start.theta = 1,
+  left = -1)
 }
 \arguments{
 \item{formula.tobit}{a regression formula describing the relationship between the tobit response and the covariates}
@@ -16,7 +17,11 @@ hyreg(formula.tobit, formula.discrete, data.tobit, data.discrete,
 
 \item{data.discrete}{the data.frame containing the bernoulli responses and covariates}
 
-\item{start}{a vector of starting values for optimization. If not specified, starting values are taken from a non-hybrid tobit model, and theta is set to 1.}
+\item{start.beta}{a numeric vector of starting values for beta. If not specified, start.beta is taken from a non-hybrid tobit model}
+
+\item{start.sigma}{a numeric starting value for sigma. If not specified, start.sigma is also taken from a non-hybrid tobit model}
+
+\item{start.theta}{starting value for theta.}
 
 \item{left}{a number specifying where left-censoring occurred}
 }
