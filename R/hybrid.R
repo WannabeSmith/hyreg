@@ -48,6 +48,7 @@ llHybrid <- function(y.tobit, y.discrete, sigma, xTbeta.tobit, xTbeta.discrete, 
 #' @param start.beta a numeric vector of starting values for beta. If not specified, start.beta is taken from a non-hybrid tobit model
 #' @param start.sigma a numeric starting value for sigma. If not specified, start.sigma is also taken from a non-hybrid tobit model
 #' @param start.theta starting value for theta.
+#' @param method a string specifying the optimization routine to be used by optim
 #' @param left a number specifying where left-censoring occurred
 #' @return a list containing the following parameter estimates (from maximum likelihood):\cr
 #' \item{beta}{the regression coefficients}
@@ -55,7 +56,8 @@ llHybrid <- function(y.tobit, y.discrete, sigma, xTbeta.tobit, xTbeta.discrete, 
 #' \item{theta}{the multiplicative factor relating the two sets of regression coefficients}
 #' @export
 hyreg <- function(formula.tobit, formula.discrete, data.tobit, data.discrete,
-                  start.beta = NULL, start.sigma = NULL, start.theta = 1, left = -1)
+                  start.beta = NULL, start.sigma = NULL, start.theta = 1, left = -1,
+                  method = "Nelder-Mead")
 {
   response.varname.tobit <- all.vars(formula.tobit)[1]
   y.tobit <- as.vector(data.tobit[, response.varname.tobit])
@@ -118,8 +120,14 @@ hyreg <- function(formula.tobit, formula.discrete, data.tobit, data.discrete,
 
   objective <- cmpfun(objective)
 
-  optimum <- optim(par = start, fn = objective,
-                   lower = lower, method = "L-BFGS-B")
+  if(method == "L-BFGS-B")
+  {
+    optimum <- optim(par = start, fn = objective,
+                     lower = lower, method = "L-BFGS-B")
+  } else
+  {
+    optimum <- optim(par = start, fn = objective, method = method)
+  }
 
   beta.ests <- optimum$par[1:num.betas]
   sigma.est <- optimum$par[num.betas + 1]

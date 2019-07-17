@@ -6,7 +6,7 @@
 \usage{
 hyreg(formula.tobit, formula.discrete, data.tobit, data.discrete,
   start.beta = NULL, start.sigma = NULL, start.theta = 1,
-  left = -1)
+  left = -1, method = "Nelder-Mead")
 }
 \arguments{
 \item{formula.tobit}{a regression formula describing the relationship between the tobit response and the covariates}
@@ -24,6 +24,8 @@ hyreg(formula.tobit, formula.discrete, data.tobit, data.discrete,
 \item{start.theta}{starting value for theta.}
 
 \item{left}{a number specifying where left-censoring occurred}
+
+\item{method}{a string specifying the optimization routine to be used by optim}
 }
 \value{
 a list containing the following parameter estimates (from maximum likelihood):\cr
