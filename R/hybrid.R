@@ -32,33 +32,12 @@ llHybrid <- function(y.tobit, y.discrete, sigma, xTbeta.tobit, xTbeta.discrete, 
     llLogisticReg(y = y.discrete, xTbeta = xTbeta.discrete)
 }
 
-#' Perform hybrid tobit-logit regression
-#'
-#' This function gets estimates of beta, sigma, and theta in the hybrid tobit-logit
-#' model. That is, when the logit betas are a scalar multiple of the tobit betas.
-#'
-#' @importFrom stats model.matrix dnorm pnorm optim
-#' @importFrom survival survreg
-#' @importFrom survival Surv
-#' @importFrom compiler cmpfun
-#' @param formula.tobit a regression formula describing the relationship between the tobit response and the covariates
-#' @param formula.discrete a regression formula describing the relationship between the bernoulli response and the covariates
-#' @param data.tobit the data.frame containing the tobit responses and covariates
-#' @param data.discrete the data.frame containing the bernoulli responses and covariates
-#' @param start.beta a numeric vector of starting values for beta. If not specified, start.beta is taken from a non-hybrid tobit model
-#' @param start.sigma a numeric starting value for sigma. If not specified, start.sigma is also taken from a non-hybrid tobit model
-#' @param start.theta starting value for theta.
-#' @param method a string specifying the optimization routine to be used by optim
-#' @param left a number specifying where left-censoring occurred
-#' @return a list containing the following parameter estimates (from maximum likelihood):\cr
-#' \item{beta}{the regression coefficients}
-#' \item{sigma}{the standard deviation of the censored normal distribution}
-#' \item{theta}{the multiplicative factor relating the two sets of regression coefficients}
-#' @export
-hyreg <- function(formula.tobit, formula.discrete, data.tobit, data.discrete,
-                  start.beta = NULL, start.sigma = NULL, start.theta = 1, left = -1,
-                  method = "Nelder-Mead")
+# homoscedastic hyreg
+hyreg.homo <- function(formula.tobit, formula.discrete, data.tobit, data.discrete,
+                       start.beta = NULL, start.sigma = NULL, start.theta = 1,
+                       left, method)
 {
+  all.vars.tobit <- all.vars(formula.tobit)
   response.varname.tobit <- all.vars(formula.tobit)[1]
   y.tobit <- as.vector(data.tobit[, response.varname.tobit])
 
@@ -98,10 +77,11 @@ hyreg <- function(formula.tobit, formula.discrete, data.tobit, data.discrete,
 
   names(start) <- c(colnames(X.tobit), "sigma", "theta")
 
+
   # Specify lower bounds for L-BFGS-B
   # all betas can take on values from -Inf to Inf, but sigma and theta can only take on values > 0.
   #   However, setting the lower bound exactly to 0 causes numerical issues in the optimization procedure.
-  lower = c(rep(-Inf, num.betas), 10e-16, -Inf)
+  lower <- c(rep(-Inf, num.betas), 10e-16, -Inf)
 
   # Create the objective function (this is created here so that num.betas,
   #   X.tobit, etc. are all in scope)
@@ -136,6 +116,135 @@ hyreg <- function(formula.tobit, formula.discrete, data.tobit, data.discrete,
   return(list("beta" = beta.ests,
               "sigma" = sigma.est,
               "theta" = theta.est))
+}
+
+# conditional heteroscedastic hyreg
+hyreg.ch <- function(formula.tobit, formula.discrete, data.tobit, data.discrete,
+                     start.beta = NULL, start.theta = 1, start.gamma = NULL,
+                     left = -1, method, ch.terms, ch.link)
+{
+  if(ch.link == "log")
+  {
+    link.inv <- exp
+  } else if (ch.link == "identity")
+  {
+    link.inv <- identity
+  } else if (ch.link == "quadratic")
+  {
+    link.inv <- sqrt
+  } else
+  {
+    stop("Invalid link. Must be log, identity, or quadratic")
+  }
+
+  all.vars.tobit <- all.vars(formula.tobit)
+  response.varname.tobit <- all.vars(formula.tobit)[1]
+  y.tobit <- as.vector(data.tobit[, response.varname.tobit])
+
+  response.varname.discrete <- all.vars(formula.discrete)[1]
+  y.discrete <- as.vector(data.discrete[, response.varname.discrete])
+
+  X.tobit <- model.matrix(formula.tobit, data.tobit)
+  X.discrete <- model.matrix(formula.discrete, data.discrete)
+
+  stopifnot(ncol(X.tobit) == ncol(X.discrete))
+
+  X.ch.terms <- cbind(1, X.tobit[, ch.terms])
+  colnames(X.ch.terms) <- c("Intercept", colnames(X.tobit))
+
+  # Number of betas
+  num.betas <- ncol(X.tobit)
+  num.ch.terms <- ncol(X.ch.terms)
+
+  # Number of parameters is num.betas plus 2. One for sigma (std dev),
+  #   one for theta (multiplicative factor between discrete and tobit betas)
+  num.params <- num.betas + ncol(X.ch.terms) + 1
+
+  # Get default beta parameters if not specified
+  if(is.null(start.beta))
+  {
+    model.start <- survreg(Surv(y.tobit, y.tobit > left, type = "left") ~
+                             0 + X.tobit, dist = "gaussian")
+
+    start.beta <- model.start$coefficients
+  }
+
+  start <- c(start.beta, start.theta, start.gamma)
+
+  names(start) <- c(colnames(X.tobit), "theta", paste("gamma", colnames(X.ch.terms), sep = "_"))
+
+  # Create the objective function (this is created here so that num.betas,
+  #   X.tobit, etc. are all in scope)
+  objective <- function(params)
+  {
+    beta.tobit <- params[1:num.betas]
+    theta <- params[num.betas + 1]
+    gamma <- params[(num.betas + 2):length(params)]
+
+    sigma <- link.inv(X.ch.terms %*% gamma)
+
+    xTbeta.tobit <- X.tobit %*% beta.tobit
+    xTbeta.discrete <- theta * X.discrete %*% beta.tobit
+
+    return(-llHybrid(y.tobit = y.tobit, y.discrete = y.discrete, xTbeta.tobit = xTbeta.tobit,
+                     xTbeta.discrete = xTbeta.discrete, sigma = sigma, left = left))
+  }
+
+  objective <- cmpfun(objective)
+
+  optimum <- optim(par = start, fn = objective, method = method)
+
+  beta.ests <- optimum$par[1:num.betas]
+  theta.est <- optimum$par[num.betas + 1]
+  gamma.ests <- optimum$par[(num.betas + 2):num.params]
+
+  return(list("beta" = beta.ests,
+              "gamma" = gamma.ests,
+              "theta" = theta.est))
+}
+
+#' Perform hybrid tobit-logit regression
+#'
+#' This function gets estimates of beta, sigma, and theta in the hybrid tobit-logit
+#' model. That is, when the logit betas are a scalar multiple of the tobit betas.
+#'
+#' @importFrom stats model.matrix dnorm pnorm optim
+#' @importFrom survival survreg
+#' @importFrom survival Surv
+#' @importFrom compiler cmpfun
+#' @param formula.tobit a regression formula describing the relationship between the tobit response and the covariates
+#' @param formula.discrete a regression formula describing the relationship between the bernoulli response and the covariates
+#' @param data.tobit the data.frame containing the tobit responses and covariates
+#' @param data.discrete the data.frame containing the bernoulli responses and covariates
+#' @param start.beta a numeric vector of starting values for beta. If not specified, start.beta is taken from a non-hybrid tobit model
+#' @param start.sigma a numeric starting value for sigma. If not specified, start.sigma is also taken from a non-hybrid tobit model
+#' @param start.theta starting value for theta. This must be specified
+#' @param start.gamma starting value for gamma. This must be specified.
+#' @param method a string specifying the optimization routine to be used by optim
+#' @param left a number specifying where left-censoring occurred
+#' @param ch.terms a vector of names of variables to be included for conditional heteroscedasticity. An intercept will be included by default
+#' @param ch.link one of "log", "quadratic", or "identity" indicating the type of link to be used for conditionally linear heteroscedasticity
+#' @return a list containing the following parameter estimates (from maximum likelihood):\cr
+#' \item{beta}{the regression coefficients}
+#' \item{sigma}{the standard deviation of the censored normal distribution}
+#' \item{theta}{the multiplicative factor relating the two sets of regression coefficients}
+#' @export
+hyreg <- function(formula.tobit, formula.discrete, data.tobit, data.discrete,
+                  start.beta = NULL, start.sigma = NULL, start.theta = 1, start.gamma = NULL,
+                  left = -1, method = "Nelder-Mead", ch.terms = NULL, ch.link = "log")
+{
+ if(is.null(ch.terms))
+ {
+   return(hyreg.homo(formula.tobit = formula.tobit, formula.discrete = formula.discrete,
+                     data.tobit = data.tobit, data.discrete = data.discrete, start.beta = start.beta,
+                     start.sigma = start.sigma, start.theta = start.theta, left = left, method = method))
+ } else
+ {
+   return(hyreg.ch(formula.tobit = formula.tobit, formula.discrete = formula.discrete,
+                   data.tobit = data.tobit, data.discrete = data.discrete, start.beta = start.beta,
+                   start.theta = start.theta, start.gamma = start.gamma, left = left, method = method,
+                   ch.terms = ch.terms, ch.link = ch.link))
+ }
 }
 
 # beta.logLikelihood <- function(beta.tobit, theta, beta.hat.tobit, beta.hat.discrete, Sigma.hat.tobit.inv, Sigma.hat.discrete.inv)

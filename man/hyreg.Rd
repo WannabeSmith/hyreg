@@ -6,7 +6,8 @@
 \usage{
 hyreg(formula.tobit, formula.discrete, data.tobit, data.discrete,
   start.beta = NULL, start.sigma = NULL, start.theta = 1,
-  left = -1, method = "Nelder-Mead")
+  start.gamma = NULL, left = -1, method = "Nelder-Mead",
+  ch.terms = NULL, ch.link = "log")
 }
 \arguments{
 \item{formula.tobit}{a regression formula describing the relationship between the tobit response and the covariates}
@@ -21,11 +22,17 @@ hyreg(formula.tobit, formula.discrete, data.tobit, data.discrete,
 
 \item{start.sigma}{a numeric starting value for sigma. If not specified, start.sigma is also taken from a non-hybrid tobit model}
 
-\item{start.theta}{starting value for theta.}
+\item{start.theta}{starting value for theta. This must be specified}
+
+\item{start.gamma}{starting value for gamma. This must be specified.}
 
 \item{left}{a number specifying where left-censoring occurred}
 
 \item{method}{a string specifying the optimization routine to be used by optim}
+
+\item{ch.terms}{a vector of names of variables to be included for conditional heteroscedasticity. An intercept will be included by default}
+
+\item{ch.link}{one of "log", "quadratic", or "identity" indicating the type of link to be used for conditionally linear heteroscedasticity}
 }
 \value{
 a list containing the following parameter estimates (from maximum likelihood):\cr
